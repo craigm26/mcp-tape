@@ -1,0 +1,50 @@
+{
+  "name": "mcp-tape",
+  "version": "0.4.0",
+  "description": "Stdio proxy for MCP servers that logs all JSON-RPC traffic to a replayable trace file.",
+  "license": "MIT",
+  "author": "craigm26",
+  "homepage": "https://mcpreplay.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/craigm26/mcp-tape.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "anthropic",
+    "proxy",
+    "trace",
+    "replay",
+    "debugging",
+    "observability"
+  ],
+  "type": "module",
+  "bin": {
+    "mcp-tape": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli.js",
+    "dev": "tsc --watch",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "default-redact.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "ws": "^8.20.1"
+  }
+}

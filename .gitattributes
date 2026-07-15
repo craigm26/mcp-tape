@@ -1,0 +1,18 @@
+# Normalize text files to LF on commit AND on checkout. Stops CRLF/LF churn
+# between Windows and POSIX checkouts of the same repo. The CRLF overrides
+# below are the only files that keep their native Windows line endings.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF endings regardless of platform.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary blobs — never touch.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.gz  binary
+*.zip binary

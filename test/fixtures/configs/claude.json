@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/me"]
+    },
+    "github": {
+      "command": "node",
+      "args": ["/opt/mcp-github/dist/index.js"],
+      "env": { "GITHUB_TOKEN": "ghp_xxx" }
+    }
+  }
+}

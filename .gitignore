@@ -1,0 +1,5 @@
+node_modules/
+dist/
+mcp-traces/
+*.log
+.DS_Store

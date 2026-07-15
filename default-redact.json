@@ -1,0 +1,29 @@
+{
+  "rules": [
+    { "type": "path", "path": "$..api_key" },
+    { "type": "path", "path": "$..apiKey" },
+    { "type": "path", "path": "$..token" },
+    { "type": "path", "path": "$..bearer" },
+    { "type": "path", "path": "$..secret" },
+    { "type": "path", "path": "$..password" },
+    { "type": "path", "path": "$..passwd" },
+    { "type": "path", "path": "$..pwd" },
+    { "type": "path", "path": "$..private_key" },
+    { "type": "path", "path": "$..privateKey" },
+    { "type": "path", "path": "$..access_key" },
+    { "type": "path", "path": "$..accessKey" },
+    { "type": "path", "path": "$..authorization" },
+    { "type": "path", "path": "$..Authorization" },
+    { "type": "regex", "pattern": "\\bAKIA[0-9A-Z]{16}\\b" },
+    { "type": "regex", "pattern": "\\bsk-[A-Za-z0-9_-]{20,}\\b" },
+    { "type": "regex", "pattern": "\\bgh[pousr]_[A-Za-z0-9]{36,}\\b" },
+    { "type": "regex", "pattern": "\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b" },
+    { "type": "regex", "pattern": "[Aa]uthorization\\s*:\\s*.+" },
+    { "type": "regex", "pattern": "[Bb]earer\\s+[A-Za-z0-9._\\-+/=]+" },
+    { "type": "regex", "pattern": "\\b(?:xoxb|xoxa|xoxp|xoxr|xoxs)-[A-Za-z0-9-]{10,}" },
+    { "type": "regex", "pattern": "\\b(?:rk_live|sk_live)_[A-Za-z0-9]{8,}\\b" },
+    { "type": "regex", "pattern": "(?<=://[^/\\s:@]{1,128}:)[^/\\s@]+(?=@)" },
+    { "type": "regex", "pattern": "[^\\s\"]*\\.env(?:\\.[A-Za-z0-9._\\-]+)?\\b" },
+    { "type": "regex", "pattern": "[^\\s\"]*\\bid_(?:rsa|ed25519|ecdsa|dsa)\\b[^\\s\"]*" }
+  ]
+}
