@@ -68,7 +68,8 @@ async function runTape(cliArgs, { input = '', keepStdinOpen = false, timeoutMs =
     files,
     lines,
     traceText: lines.length ? await readFile(join(out, files.find((f) => f.endsWith('.jsonl'))), 'utf8') : '',
-    cleanup: () => rm(dir, { recursive: true, force: true }),
+    // Retries cover Windows, where a just-ended process can hold the directory briefly.
+    cleanup: () => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
   };
 }
 

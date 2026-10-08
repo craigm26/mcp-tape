@@ -70,9 +70,13 @@ switch (scenario) {
   // the pipe stays open after the server has gone.
   case 'helper-holds-stdout': {
     const { spawn } = await import('node:child_process');
+    const { tmpdir } = await import('node:os');
     const helper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
       detached: true,
       stdio: ['ignore', 'inherit', 'ignore'],
+      // Not the test's directory: on Windows a process's working directory
+      // cannot be removed while it runs.
+      cwd: tmpdir(),
     });
     out(JSON.stringify({ helper: helper.pid }) + '\n');
     helper.unref();
