@@ -12,6 +12,9 @@ are its decision records).
   (D-002). When the server exits, mcp-tape finishes the trace and exits with
   its status even if the client keeps its end open (D-003). Messages the
   client sends after that are no longer appended after the trace's `end` line.
+  If a process the server started in the background keeps the server's stdout
+  open, mcp-tape stops reading it 2 s after the server exits instead of
+  waiting for that process too.
 - **Large messages no longer stall the proxy.** Two default redaction rules
   (`.env` paths and SSH key paths) took time proportional to the square of a
   word's length (measured on one machine: 1 s for a 20,000-character base64
@@ -37,6 +40,9 @@ are its decision records).
   `PATHEXT`) and run with their arguments quoted (D-017).
 - A message member named `__proto__` is kept in the trace instead of being
   dropped by redaction (D-025).
+- A message nested too deeply to redact (thousands of levels) is forwarded
+  but not logged, with a note on stderr, and a failed trace write is reported
+  on stderr; neither ends the proxy any more.
 - `--version` and the trace's `mcpTapVersion` now come from `package.json`
   (they said 0.3.0 in the 0.4.0 release).
 - The build no longer needs `chmod`, so `npm test` runs on Windows; CI runs
