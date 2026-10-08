@@ -28,7 +28,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/cli.js",
+    "build": "tsc && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "dev": "tsc --watch",
     "test": "npm run build && node --test test/*.test.mjs",
     "prepublishOnly": "npm run build"
