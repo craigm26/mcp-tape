@@ -199,6 +199,37 @@ test('an invalid --redact pattern is a usage error and creates nothing', async (
   }
 });
 
+test('a helper that keeps the server stdout open does not hold the session', async () => {
+  const r = await runTape(['--', process.execPath, SERVER, 'helper-holds-stdout'], { timeoutMs: 15_000 });
+  const [{ helper } = {}] = messages(r.lines, 'out');
+  try {
+    assert.equal(r.status, 0);
+    assert.ok(r.elapsedMs < 10_000, `took ${r.elapsedMs} ms`);
+    assert.equal(typeof helper, 'number');
+    assert.equal(endLine(r.lines).type, 'end');
+    assert.equal(endLine(r.lines).exitCode, 0);
+  } finally {
+    if (helper) try { process.kill(helper); } catch {}
+    await r.cleanup();
+  }
+});
+
+test('a message too deeply nested to redact is forwarded, not logged, and the session goes on', async () => {
+  const deep = '['.repeat(20_000) + ']'.repeat(20_000);
+  const r = await runTape(['--', process.execPath, SERVER, 'echo'], {
+    input: `${deep}\n{"id":2}\n`,
+  });
+  try {
+    assert.equal(r.status, 0);
+    assert.match(r.stderr, /too deeply nested to redact/);
+    // Only the second message is logged in; the deep one never reaches the trace.
+    assert.deepEqual(messages(r.lines, 'in'), [{ id: 2 }]);
+    assert.equal(endLine(r.lines).type, 'end');
+  } finally {
+    await r.cleanup();
+  }
+});
+
 test('members named __proto__ and constructor stay in the trace', async () => {
   const r = await runTape(['--', process.execPath, SERVER, 'echo'], {
     input: '{"id":1,"__proto__":{"x":1},"constructor":"c"}\n',

@@ -15,8 +15,13 @@ import { VERSION } from './version.js';
 import type { CliArgs } from './args.js';
 import type { WsBroadcaster } from './ws-broadcast.js';
 
-// After the child exits, how long to wait for its last output to reach a
-// client that has stopped reading, before exiting anyway.
+// After the child exits, how long to keep reading its stdout. The pipe normally
+// closes at once; it stays open only if another process inherited it (a helper
+// the server started in the background), and that must not hold the session open.
+const STDOUT_DRAIN_LIMIT_MS = 2_000;
+
+// After the child's stdout has ended, how long to wait for its last output to
+// reach a client that has stopped reading, before exiting anyway.
 const STDOUT_FLUSH_LIMIT_MS = 5_000;
 
 export async function runProxy(args: CliArgs): Promise<number> {
@@ -133,6 +138,17 @@ export async function runProxy(args: CliArgs): Promise<number> {
   // Drain the child's stdout so its last line is forwarded and logged. Our own
   // stdin may still be open (a client waiting for the server to go away), so
   // the session ends here, not when the client closes it.
+  let drainTimer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    outDone,
+    new Promise<void>((resolve) => {
+      drainTimer = setTimeout(resolve, STDOUT_DRAIN_LIMIT_MS);
+    }),
+  ]);
+  clearTimeout(drainTimer);
+  // Still open after the limit: something else holds the pipe. Stop reading,
+  // which ends the 'out' direction (its last partial line is still logged).
+  child.stdout?.destroy();
   await outDone;
 
   await writer.close(exitCode);
@@ -218,10 +234,23 @@ function pipeWithLog(
     } catch {
       return; // Non-JSON line — not protocol data, skip logging.
     }
-    const stage1 = fileCfg ? redactWithConfig(raw, fileCfg) : raw;
-    const redacted = redact(stage1, legacyCfg);
-    // Fire-and-forget; the writer queues lines in call order.
-    void writer.logMessage(dir, redacted);
+    let redacted: unknown;
+    try {
+      const stage1 = fileCfg ? redactWithConfig(raw, fileCfg) : raw;
+      redacted = redact(stage1, legacyCfg);
+    } catch {
+      // Redaction walks the value recursively, so JSON nested a few thousand
+      // levels deep exhausts the stack. Such a message is forwarded but not
+      // logged: an unredacted copy must never reach the trace.
+      process.stderr.write(`mcp-tape: a message too deeply nested to redact was forwarded but not logged\n`);
+      return;
+    }
+    // Fire-and-forget; the writer queues lines in call order. A failed write
+    // (disk full, say) is reported rather than left as an unhandled rejection,
+    // which would end the proxy and the client's session with it.
+    writer.logMessage(dir, redacted).catch((err: unknown) => {
+      process.stderr.write(`mcp-tape: could not write to the trace: ${(err as Error).message}\n`);
+    });
   };
 
   return new Promise((resolve) => {

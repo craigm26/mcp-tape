@@ -66,6 +66,19 @@ switch (scenario) {
     break;
   }
 
+  // Start a helper that inherits stdout and outlives this process, then exit:
+  // the pipe stays open after the server has gone.
+  case 'helper-holds-stdout': {
+    const { spawn } = await import('node:child_process');
+    const helper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
+      detached: true,
+      stdio: ['ignore', 'inherit', 'ignore'],
+    });
+    out(JSON.stringify({ helper: helper.pid }) + '\n');
+    helper.unref();
+    break;
+  }
+
   // Print the arguments after the scenario name, then exit.
   case 'args': {
     out(JSON.stringify({ args: process.argv.slice(3) }) + '\n');
