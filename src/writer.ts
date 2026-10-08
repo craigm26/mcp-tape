@@ -16,6 +16,11 @@ interface OpenOpts {
 }
 
 export class TraceWriter {
+  // Set when close() starts. The end line is the last line of a trace, so
+  // messages that arrive after it (the client writing after the server has
+  // exited) are dropped rather than appended behind it.
+  private closing = false;
+
   private constructor(
     private readonly rot: RotatingWriter | null,
     readonly path: string | null,
@@ -50,10 +55,13 @@ export class TraceWriter {
   }
 
   async logMessage(dir: 'in' | 'out', raw: unknown): Promise<void> {
+    if (this.closing) return;
     await this.writeLine({ t: new Date().toISOString(), dir, raw });
   }
 
   async close(exitCode: number): Promise<void> {
+    if (this.closing) return;
+    this.closing = true;
     await this.writeLine({
       t: new Date().toISOString(),
       type: 'end',

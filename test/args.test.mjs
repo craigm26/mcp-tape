@@ -375,3 +375,11 @@ test('--upload-on-exit + --public are both parsed in proxy mode', () => {
   assert.equal(args.public, true);
   assert.deepEqual(args.command, ['node', 'srv.js']);
 });
+
+test('an invalid --redact pattern is a usage error (proxy and share)', () => {
+  assert.throws(() => parseArgs(['--redact', '(', '--', 'node', 'srv.js']), /--redact/);
+  assert.throws(() => parseArgs(['--redact', 'a{2,1}', '--', 'node', 'srv.js']), /--redact/);
+  assert.throws(() => parseArgs(['share', 'trace.jsonl', '--redact', '[']), /--redact/);
+  // Valid patterns still pass through untouched.
+  assert.deepEqual(parseArgs(['--redact', '^id', '--', 'x']).redactPatterns, ['^id']);
+});

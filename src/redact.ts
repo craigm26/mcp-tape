@@ -68,11 +68,11 @@ function walk(value: unknown, compiled: Segment[][], path: string[]): unknown {
     return value.map((v, i) => walk(v, compiled, [...path, String(i)]));
   }
   if (value && typeof value === 'object') {
-    const obj: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) {
-      obj[k] = walk(v, compiled, [...path, k]);
-    }
-    return obj;
+    // fromEntries defines each member, so a member named `__proto__` stays a
+    // member (assigning to obj['__proto__'] would set the prototype instead).
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, walk(v, compiled, [...path, k])]),
+    );
   }
   return value;
 }
@@ -97,15 +97,17 @@ export function redact(value: unknown, cfg: RedactConfig, parentKey = ''): unkno
     return value.map((v) => redact(v, cfg, parentKey));
   }
   if (value && typeof value === 'object') {
-    const obj: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) {
-      obj[k] = cfg.fields.some((r) => r.test(k))
-        ? typeof v === 'string' || (v && typeof v === 'object')
-          ? cfg.replacement
-          : v
-        : redact(v, cfg, k);
-    }
-    return obj;
+    // See walk(): fromEntries keeps a `__proto__` member as a member.
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [
+        k,
+        cfg.fields.some((r) => r.test(k))
+          ? typeof v === 'string' || (v && typeof v === 'object')
+            ? cfg.replacement
+            : v
+          : redact(v, cfg, k),
+      ]),
+    );
   }
   return value;
 }

@@ -72,6 +72,11 @@ export function redactWithConfig(value: unknown, cfg: CompiledRedact): unknown {
   return applyRegexes(afterPath, cfg);
 }
 
+/** The string rules alone, for text that isn't under any key (the command line). */
+export function redactStringWithConfig(value: string, cfg: CompiledRedact): string {
+  return applyRegexes(value, cfg) as string;
+}
+
 function applyRegexes(value: unknown, cfg: CompiledRedact): unknown {
   if (typeof value === 'string') {
     let out = value;
@@ -83,9 +88,11 @@ function applyRegexes(value: unknown, cfg: CompiledRedact): unknown {
   }
   if (Array.isArray(value)) return value.map((v) => applyRegexes(v, cfg));
   if (value && typeof value === 'object') {
-    const obj: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) obj[k] = applyRegexes(v, cfg);
-    return obj;
+    // fromEntries defines each member, so a member named `__proto__` stays a
+    // member (assigning to obj['__proto__'] would set the prototype instead).
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, applyRegexes(v, cfg)]),
+    );
   }
   return value;
 }

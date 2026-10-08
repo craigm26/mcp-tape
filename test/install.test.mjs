@@ -87,7 +87,9 @@ test('discoverTargets identifies claude-code config at $HOME/.claude.json', asyn
 
 test('discoverTargets returns empty array when no configs present', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'mcp-tape-disc-empty-'));
-  const targets = await discoverTargets({ home: dir });
+  // An empty env too: on Windows the Claude Desktop path comes from %APPDATA%,
+  // which would otherwise point at the real profile of whoever runs the tests.
+  const targets = await discoverTargets({ home: dir, env: {} });
   assert.deepEqual(targets, []);
   await rm(dir, { recursive: true });
 });
@@ -268,7 +270,7 @@ test('discoverTargets identifies antigravity at ~/.gemini/antigravity/mcp_config
   await writeFile(full, '{"mcpServers":{}}');
   const targets = await discoverTargets({ home });
   assert.ok(targets.some((t) => t.name === 'antigravity'));
-  assert.ok(targets.find((t) => t.name === 'antigravity').path.endsWith(rel));
+  assert.ok(targets.find((t) => t.name === 'antigravity').path.endsWith(join(...rel.split('/'))));
   await rm(home, { recursive: true });
 });
 

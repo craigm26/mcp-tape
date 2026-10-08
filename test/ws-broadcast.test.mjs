@@ -36,9 +36,13 @@ async function nextMessage(ws) {
 
 async function open(url) {
   const ws = new WebSocket(url);
-  await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
-  // Initialise queue immediately so no messages are missed between open and first nextMessage.
+  // Initialise the queue before 'open': the server sends its snapshot frame
+  // as soon as the connection is up, and when that frame arrives in the same
+  // read as the upgrade response, ws emits it synchronously right after
+  // 'open' — before an await continuation could attach a listener. The frame
+  // was then lost and the test waited for the 60 s heartbeat instead.
   getQueue(ws);
+  await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
   return ws;
 }
 
