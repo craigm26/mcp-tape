@@ -156,3 +156,22 @@ test('default rules redact bare Bearer value in a string', async () => {
   assert.ok(out.note.includes('[REDACTED]'));
   assert.ok(!out.note.includes('eyJhbGciOi'));
 });
+
+test('redactStringWithConfig applies the string rules to a bare string', async () => {
+  const { redactStringWithConfig } = await import('../dist/redact-config.js');
+  const cfg = await loadRedactConfig({ overridePath: null });
+  assert.equal(
+    redactStringWithConfig('--key=sk-ABCDEFGHIJKLMNOPQRSTUVWX', cfg),
+    '--key=[REDACTED]',
+  );
+  assert.equal(redactStringWithConfig('/srv/app/server.js', cfg), '/srv/app/server.js');
+});
+
+test('a member named __proto__ is kept as a member', async () => {
+  const cfg = await loadRedactConfig({ overridePath: null });
+  const raw = JSON.parse('{"__proto__":{"x":"sk-ABCDEFGHIJKLMNOPQRSTUVWX"},"constructor":"c"}');
+  const out = redactWithConfig(raw, cfg);
+  assert.deepEqual(Object.keys(out).sort(), ['__proto__', 'constructor']);
+  assert.equal(Object.getPrototypeOf(out), Object.prototype);
+  assert.equal(JSON.stringify(out), '{"__proto__":{"x":"[REDACTED]"},"constructor":"c"}');
+});

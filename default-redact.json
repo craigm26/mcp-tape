@@ -23,7 +23,7 @@
     { "type": "regex", "pattern": "\\b(?:xoxb|xoxa|xoxp|xoxr|xoxs)-[A-Za-z0-9-]{10,}" },
     { "type": "regex", "pattern": "\\b(?:rk_live|sk_live)_[A-Za-z0-9]{8,}\\b" },
     { "type": "regex", "pattern": "(?<=://[^/\\s:@]{1,128}:)[^/\\s@]+(?=@)" },
-    { "type": "regex", "pattern": "[^\\s\"]*\\.env(?:\\.[A-Za-z0-9._\\-]+)?\\b" },
-    { "type": "regex", "pattern": "[^\\s\"]*\\bid_(?:rsa|ed25519|ecdsa|dsa)\\b[^\\s\"]*" }
+    { "type": "regex", "pattern": "(?<![^\\s\"])[^\\s\"]*\\.env(?:\\.[A-Za-z0-9._\\-]+)?\\b" },
+    { "type": "regex", "pattern": "(?<![^\\s\"])[^\\s\"]*\\bid_(?:rsa|ed25519|ecdsa|dsa)\\b[^\\s\"]*" }
   ]
 }
