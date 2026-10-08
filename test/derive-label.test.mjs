@@ -45,3 +45,8 @@ test('label is truncated to 32 characters', () => {
   const label = deriveLabel(['node', long]);
   assert.ok(label.length <= 32);
 });
+
+test('Windows paths split on backslash as well as slash', () => {
+  assert.equal(deriveLabel(['node', 'C:\\srv\\files.mjs']), 'files-mjs');
+  assert.equal(deriveLabel(['node', 'C:/srv/files.mjs']), 'files-mjs');
+});

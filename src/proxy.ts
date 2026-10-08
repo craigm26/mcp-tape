@@ -1,19 +1,27 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { type ChildProcess } from 'node:child_process';
 import { mkdir, access } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { constants as osConstants, homedir } from 'node:os';
 import { join } from 'node:path';
 import { TraceWriter } from './writer.js';
 import { buildConfig, redact, type RedactConfig } from './redact.js';
-import { loadRedactConfig, redactWithConfig, type CompiledRedact } from './redact-config.js';
+import {
+  loadRedactConfig,
+  redactStringWithConfig,
+  redactWithConfig,
+  type CompiledRedact,
+} from './redact-config.js';
+import { spawnCommand } from './spawn-command.js';
+import { VERSION } from './version.js';
 import type { CliArgs } from './args.js';
 import type { WsBroadcaster } from './ws-broadcast.js';
 
-const VERSION = '0.3.0';
+// After the child exits, how long to wait for its last output to reach a
+// client that has stopped reading, before exiting anyway.
+const STDOUT_FLUSH_LIMIT_MS = 5_000;
 
 export async function runProxy(args: CliArgs): Promise<number> {
   if (!args.noFile) await mkdir(args.out, { recursive: true });
 
-  const label = args.label ?? deriveLabel(args.command);
   const overridePath =
     args.redactFile
     ?? process.env.MCP_TAPE_REDACT
@@ -25,6 +33,12 @@ export async function runProxy(args: CliArgs): Promise<number> {
     extraPatterns: args.redactPatterns,
     useDefaults: args.useRedactDefaults,
   });
+
+  // The command line lands in the trace (meta.command) and, through the
+  // label, in the file name, so it gets the same string rules as message
+  // values, and the label is derived from the redacted arguments.
+  const redactedCommand = redactCommand(args.command, legacyCfg, fileCfg);
+  const label = args.label ?? deriveLabel(redactedCommand);
 
   let broadcaster: WsBroadcaster | null = null;
   let serveOnly = args.noFile;
@@ -60,7 +74,7 @@ export async function runProxy(args: CliArgs): Promise<number> {
   const writer = await TraceWriter.open({
     dir: args.out,
     label,
-    command: args.command,
+    command: redactedCommand,
     version: VERSION,
     maxBytes: args.maxBytes,
     maxFiles: args.maxFiles,
@@ -73,17 +87,25 @@ export async function runProxy(args: CliArgs): Promise<number> {
     process.stderr.write(`mcp-tape: --no-file: streaming over websocket only, no trace file on disk\n`);
   }
 
-  // On Windows, `spawn('npx', ...)` etc. fail with ENOENT because npx is a
-  // .cmd batch shim, not a bare executable. `shell: true` routes through
-  // cmd.exe which resolves PATHEXT correctly. No-op on POSIX where the
-  // executable can be found directly.
-  const child: ChildProcess = spawn(args.command[0]!, args.command.slice(1), {
+  // On Windows this finds `.cmd` shims such as `npx` without handing the
+  // arguments to a shell that would re-split them (see spawn-command.ts).
+  const child: ChildProcess = spawnCommand(args.command[0]!, args.command.slice(1), {
     stdio: ['pipe', 'pipe', 'inherit'],
-    shell: process.platform === 'win32',
   });
 
-  const inDone = pipeWithLog(process.stdin, child.stdin!, 'in', writer, legacyCfg, fileCfg);
-  const outDone = pipeWithLog(child.stdout!, process.stdout, 'out', writer, legacyCfg, fileCfg);
+  // Set once the child has exited or failed to start. From then on nothing
+  // more is forwarded to its stdin, and nothing more read from ours is logged.
+  let childGone = false;
+  pipeWithLog(process.stdin, child.stdin!, 'in', writer, legacyCfg, fileCfg, {
+    // The end of our input is the end of the child's input: closing the
+    // server's stdin is how an MCP client starts a clean shutdown.
+    endDst: true,
+    active: () => !childGone,
+  });
+  const outDone = pipeWithLog(child.stdout!, process.stdout, 'out', writer, legacyCfg, fileCfg, {
+    endDst: false,
+    active: () => true,
+  });
 
   // Signal forwarding so SIGINT/SIGTERM reach the child cleanly.
   const fwd = (sig: NodeJS.Signals) => () => {
@@ -93,14 +115,25 @@ export async function runProxy(args: CliArgs): Promise<number> {
   process.on('SIGTERM', fwd('SIGTERM'));
 
   const exitCode = await new Promise<number>((resolve) => {
+    child.on('error', (err) => {
+      // An 'error' while the child has no pid means it never started (no
+      // such program, not executable). Shells report that as 127; the trace
+      // is still finished below. Later errors (a failed kill) don't end the
+      // session.
+      if (child.pid !== undefined) return;
+      process.stderr.write(`mcp-tape: cannot start ${args.command[0]}: ${err.message}\n`);
+      resolve(127);
+    });
     child.on('exit', (code, signal) => {
-      const ec = code ?? (signal ? 128 + signalNumber(signal) : 0);
-      resolve(ec);
+      resolve(code ?? (signal ? 128 + signalNumber(signal) : 0));
     });
   });
+  childGone = true;
 
-  // Drain pipes so any final line gets logged before close.
-  await Promise.allSettled([inDone, outDone]);
+  // Drain the child's stdout so its last line is forwarded and logged. Our own
+  // stdin may still be open (a client waiting for the server to go away), so
+  // the session ends here, not when the client closes it.
+  await outDone;
 
   await writer.close(exitCode);
   if (writer.path) {
@@ -147,6 +180,18 @@ export async function runProxy(args: CliArgs): Promise<number> {
   return exitCode;
 }
 
+interface PipeOpts {
+  /** End `dst` when `src` ends (client → child: the child sees end of file). */
+  endDst: boolean;
+  /** While this returns false, chunks are neither forwarded nor logged. */
+  active: () => boolean;
+}
+
+/**
+ * Forward `src` to `dst` byte for byte and log each complete JSON line.
+ * Resolves once `src` has ended and its last line has been handled (and, for
+ * a destination that stays open, once the forwarded bytes have been flushed).
+ */
 function pipeWithLog(
   src: NodeJS.ReadableStream,
   dst: NodeJS.WritableStream,
@@ -154,33 +199,91 @@ function pipeWithLog(
   writer: TraceWriter,
   legacyCfg: RedactConfig,
   fileCfg: CompiledRedact | null,
+  opts: PipeOpts,
 ): Promise<void> {
+  // A destination that goes away (the child exited, the client closed its
+  // end) reports EPIPE as an 'error' event. Without a listener that would
+  // crash the proxy before the trace is finished.
+  dst.on('error', () => {});
+
+  const logLine = (bytes: Buffer): void => {
+    if (!opts.active()) return;
+    // Decode the whole line at once: a multi-byte character split across two
+    // reads must not turn into two replacement characters.
+    const line = bytes.toString('utf8');
+    if (!line.trim()) return;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(line);
+    } catch {
+      return; // Non-JSON line — not protocol data, skip logging.
+    }
+    const stage1 = fileCfg ? redactWithConfig(raw, fileCfg) : raw;
+    const redacted = redact(stage1, legacyCfg);
+    // Fire-and-forget; the writer queues lines in call order.
+    void writer.logMessage(dir, redacted);
+  };
+
   return new Promise((resolve) => {
-    let buffer = '';
+    // Bytes after the last LF seen so far, kept undecoded until the line is
+    // complete. Only the new chunk is searched for LF, so a long line arriving
+    // in many chunks costs time proportional to its length.
+    let pending: Buffer[] = [];
     src.on('data', (chunk: Buffer | string) => {
-      const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      if (!opts.active()) return;
       // Forward the raw bytes downstream unchanged — redaction only affects the trace.
       dst.write(chunk);
-      buffer += text;
+      const buf = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+      let start = 0;
       let idx: number;
-      while ((idx = buffer.indexOf('\n')) !== -1) {
-        const line = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 1);
-        if (!line.trim()) continue;
-        try {
-          const raw = JSON.parse(line) as unknown;
-          const stage1 = fileCfg ? redactWithConfig(raw, fileCfg) : raw;
-          const redacted = redact(stage1, legacyCfg);
-          // Fire-and-forget; ordering preserved by writer's internal queueing model
-          // (FileHandle.write resolves in order on a single handle).
-          void writer.logMessage(dir, redacted);
-        } catch {
-          // Non-JSON line — not protocol data, skip logging.
-        }
+      while ((idx = buf.indexOf(0x0a, start)) !== -1) {
+        pending.push(buf.subarray(start, idx));
+        const line = pending.length === 1 ? pending[0]! : Buffer.concat(pending);
+        pending = [];
+        logLine(line);
+        start = idx + 1;
       }
+      if (start < buf.length) pending.push(buf.subarray(start));
     });
-    src.on('end', () => resolve());
-    src.on('error', () => resolve());
+
+    let finished = false;
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      // Bytes after the last LF are one more line.
+      if (pending.length > 0) {
+        logLine(Buffer.concat(pending));
+        pending = [];
+      }
+      if (opts.endDst) {
+        dst.end();
+        resolve();
+        return;
+      }
+      // Wait until what was forwarded has left the process, so exiting right
+      // after this doesn't cut off the child's last output. An empty write's
+      // callback runs after every earlier write has completed (or failed).
+      const timer = setTimeout(resolve, STDOUT_FLUSH_LIMIT_MS);
+      dst.write('', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    };
+    src.on('end', finish);
+    src.on('close', finish);
+    src.on('error', finish);
+  });
+}
+
+function redactCommand(
+  command: readonly string[],
+  legacyCfg: RedactConfig,
+  fileCfg: CompiledRedact | null,
+): string[] {
+  // String rules only: key-based rules need an object member to look at.
+  return command.map((arg) => {
+    const stage1 = fileCfg ? redactStringWithConfig(arg, fileCfg) : arg;
+    return redact(stage1, legacyCfg) as string;
   });
 }
 
@@ -193,17 +296,18 @@ export function deriveLabel(command: readonly string[]): string {
     // env-var payloads, or other secret-bearing strings that would leak
     // sensitive content into the trace filename (and the stderr banner).
     if (/\s/.test(c)) continue;
-    const last = c.split('/').pop() ?? c;
+    // Windows paths use `\` as well as `/`.
+    const last = c.split(/[\\/]/).pop() ?? c;
     const cleaned = last.replace(/[^A-Za-z0-9-]/g, '-').toLowerCase();
     if (cleaned) return cleaned.slice(0, 32);
   }
   return 'mcp';
 }
 
-function signalNumber(sig: string): number {
-  // POSIX-ish defaults; good enough for an informative exit code.
-  const map: Record<string, number> = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGKILL: 9, SIGTERM: 15 };
-  return map[sig] ?? 0;
+// The platform's number for the signal (SIGUSR1 is 10 on Linux, 30 on macOS),
+// so a signal exit is 128 + n as a shell would report it.
+export function signalNumber(sig: string): number {
+  return (osConstants.signals as Record<string, number | undefined>)[sig] ?? 0;
 }
 
 function defaultRedactPath(): string {

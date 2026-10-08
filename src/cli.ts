@@ -2,8 +2,7 @@
 import { parseArgs } from './args.js';
 import { runProxy } from './proxy.js';
 import { describeDefaults } from './redact.js';
-
-const VERSION = '0.3.0';
+import { VERSION } from './version.js';
 
 async function main(): Promise<void> {
   let args;
