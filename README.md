@@ -156,6 +156,10 @@ Full live-mode walkthrough lives in the renderer repo at
 - `Authorization:` / `Bearer …` header values appearing in any string
 - File paths matching `id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`, or `.env*`
 
+The server command line gets the same value patterns before it is written to the trace, and the
+default label (which becomes part of the trace file name) is taken from the redacted command, so a
+token passed as an argument doesn't end up in a file name.
+
 Inspect or add to these:
 
 ```bash
@@ -196,6 +200,14 @@ One JSON object per line. First line is a `meta` header, last line is an `end` m
 - `dir: "out"` — server → client (data the proxy received from the server's stdout)
 - `raw` — verbatim JSON-RPC message, post-redaction
 - `t` — ISO-8601 with millisecond precision
+- `command` — the server command line, redacted with the same string rules as messages
+
+### Shutdown and exit status
+
+When the client closes mcp-tape's stdin, mcp-tape closes the server's stdin, which is how an MCP
+client asks a stdio server to shut down. When the server exits, mcp-tape writes the `end` line
+and exits with the server's status, even if the client still has its end open: 128 + the signal
+number if the server was killed by a signal, and 127 if the command could not be started.
 
 The full spec lives at [mcpreplay.dev/docs/format](https://mcpreplay.dev/docs/format).
 
