@@ -152,7 +152,7 @@ function parseProxyArgs(args: CliArgs, argv: readonly string[]): void {
       args.label = needValue(argv, ++i, '--label');
       i++;
     } else if (arg === '--redact') {
-      args.redactPatterns.push(needValue(argv, ++i, '--redact'));
+      args.redactPatterns.push(needPattern(argv, ++i, '--redact'));
       i++;
     } else if (arg === '--redact-file') {
       args.redactFile = needValue(argv, ++i, '--redact-file');
@@ -224,6 +224,18 @@ function parseProxyArgs(args: CliArgs, argv: readonly string[]): void {
 function needValue(argv: readonly string[], i: number, flag: string): string {
   if (i >= argv.length) throw new Error(`${flag} requires an argument`);
   return argv[i]!;
+}
+
+// A pattern that doesn't compile is a usage error (status 2), caught here
+// before anything is created, rather than a crash once the proxy is running.
+function needPattern(argv: readonly string[], i: number, flag: string): string {
+  const pattern = needValue(argv, i, flag);
+  try {
+    new RegExp(pattern, 'g');
+  } catch (err) {
+    throw new Error(`${flag}: ${(err as Error).message}`);
+  }
+  return pattern;
 }
 
 function readEnvInt(
@@ -323,7 +335,7 @@ function parseShareArgs(args: CliArgs, rest: readonly string[]): CliArgs {
       if (args.shareToken.length === 0) throw new Error('--token requires a value');
       i++;
     } else if (arg === '--redact') {
-      args.redactPatterns.push(needValue(rest, ++i, '--redact'));
+      args.redactPatterns.push(needPattern(rest, ++i, '--redact'));
       i++;
     } else if (arg === '--redact-file') {
       args.redactFile = needValue(rest, ++i, '--redact-file');
